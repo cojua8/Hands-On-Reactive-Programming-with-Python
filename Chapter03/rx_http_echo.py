@@ -2,11 +2,10 @@ import asyncio
 from aiohttp import web
 import rx
 import rx.operators as ops
-from rx.subject import Subject
+from rx.subject.subject import Subject
 
 
 def http_driver(sink, loop):
-    app = None
     runner = None
 
     def on_subscribe(observer, scheduler):
@@ -15,11 +14,11 @@ def http_driver(sink, loop):
                 data = await request.read()
                 response_future = asyncio.Future()
                 request_item = {
-                    'method': request.method,
-                    'path': path,
-                    'match_info': request.match_info,
-                    'data': data,
-                    'context': response_future,
+                    "method": request.method,
+                    "path": path,
+                    "match_info": request.match_info,
+                    "data": data,
+                    "context": response_future,
                 }
                 observer.on_next(request_item)
                 await response_future
@@ -33,8 +32,10 @@ def http_driver(sink, loop):
 
             for method in methods:
                 app.router.add_route(
-                    method, path,
-                    lambda r: on_request_data(r, path))
+                    method,
+                    path,
+                    lambda r: on_request_data(r, path),
+                )
 
         def start_server(host, port, app):
             runner = web.AppRunner(app)
@@ -55,14 +56,14 @@ def http_driver(sink, loop):
 
         def on_sink_item(i):
             nonlocal runner
-            if i['what'] == 'response':
-                response_future = i['context']
-                response_future.set_result((i['data'], i['status']))
-            elif i['what'] == 'add_route':
-                add_route(app, i['methods'], i['path'])
-            elif i['what'] == 'start_server':
-                runner = start_server(i['host'], i['port'], app)
-            elif i['what'] == 'stop_server':
+            if i["what"] == "response":
+                response_future = i["context"]
+                response_future.set_result((i["data"], i["status"]))
+            elif i["what"] == "add_route":
+                add_route(app, i["methods"], i["path"])
+            elif i["what"] == "start_server":
+                runner = start_server(i["host"], i["port"], app)
+            elif i["what"] == "stop_server":
                 stop_server(runner)
 
         def on_sink_error(e):
@@ -72,46 +73,49 @@ def http_driver(sink, loop):
             observer.on_completed()
 
         app = web.Application()
+
         sink.subscribe(
             on_next=on_sink_item,
             on_error=on_sink_error,
-            on_completed=on_sink_completed)
+            on_completed=on_sink_completed,
+        )
 
     return rx.create(on_subscribe)
 
 
 def echo_server(source):
-    init = rx.from_([
-        {
-            'what': 'add_route',
-            'methods': ['GET'],
-            'path': '/echo/{what}',
-        }, {
-            'what': 'start_server',
-            'host': 'localhost',
-            'port': 8080
-        }
-    ])
+    init = rx.from_(
+        [
+            {
+                "what": "add_route",
+                "methods": ["GET"],
+                "path": "/echo/{what}",
+            },
+            {"what": "start_server", "host": "localhost", "port": 8080},
+        ]
+    )
 
-    echo = source['http'].pipe(
-        ops.map(lambda i: {
-            'what': 'response',
-            'status': 200,
-            'context': i['context'],
-            'data': i['match_info']['what'].encode('utf-8'),
-        })
+    echo = source["http"].pipe(
+        ops.map(
+            lambda i: {
+                "what": "response",
+                "status": 200,
+                "context": i["context"],
+                "data": i["match_info"]["what"].encode("utf-8"),
+            }
+        )
     )
 
     return {
-        'http': rx.merge(init, echo),
+        "http": rx.merge(init, echo),
     }
 
 
 def main():
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
     http_proxy = Subject()
     sources = {
-        'http': http_driver(http_proxy, loop),
+        "http": http_driver(http_proxy, loop),
     }
 
     sinks = echo_server(sources)
@@ -121,5 +125,5 @@ def main():
     loop.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
